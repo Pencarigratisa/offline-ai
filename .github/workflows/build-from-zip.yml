@@ -26,23 +26,30 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.2.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.2.1'
 
+      - name: Check project files
+        run: |
+          echo "=== ROOT PROJECT ==="
+          pwd
+          ls -la
+          echo "=== GRADLE FILES ==="
+          find . -maxdepth 3 -type f \( -name "build.gradle" -o -name "build.gradle.kts" -o -name "settings.gradle" -o -name "settings.gradle.kts" \) -print
+
       - name: Build Debug APK
         run: |
-          chmod +x ./gradlew
-          ./gradlew --no-daemon --stacktrace assembleDebug
+          gradle --no-daemon --stacktrace assembleDebug
 
       - name: Verify APK output
         run: |
-          echo "Mencari APK..."
-          find "$GITHUB_WORKSPACE/app/build/outputs" -type f -name "*.apk" -print
+          echo "=== APK OUTPUT ==="
+          find "$GITHUB_WORKSPACE" -type f -name "*.apk" -print
 
           if [ ! -f "$GITHUB_WORKSPACE/app/build/outputs/apk/debug/app-debug.apk" ]; then
-            echo "ERROR: APK tidak ditemukan!"
+            echo "ERROR: app-debug.apk tidak ditemukan!"
             exit 1
           fi
 
@@ -52,10 +59,10 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p artifact
+
           cp "$GITHUB_WORKSPACE/app/build/outputs/apk/debug/app-debug.apk" \
              "$GITHUB_WORKSPACE/artifact/OfflineAI-debug.apk"
 
-          echo "Artifact siap:"
           ls -lh "$GITHUB_WORKSPACE/artifact/OfflineAI-debug.apk"
 
       - name: Upload APK Artifact
