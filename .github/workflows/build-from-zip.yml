@@ -5,10 +5,6 @@ on:
     branches:
       - main
       - master
-  pull_request:
-    branches:
-      - main
-      - master
   workflow_dispatch:
 
 jobs:
@@ -17,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup JDK 17
@@ -31,41 +27,94 @@ jobs:
         with:
           gradle-version: '8.2.1'
 
-      - name: Check project files
+      - name: Extract project ZIP
+        shell: bash
         run: |
-          echo "=== ROOT PROJECT ==="
-          pwd
-          ls -la
-          echo "=== GRADLE FILES ==="
-          find . -maxdepth 3 -type f \( -name "build.gradle" -o -name "build.gradle.kts" -o -name "settings.gradle" -o -name "settings.gradle.kts" \) -print
+          echo "Mencari file ZIP..."
 
-      - name: Build Debug APK
-        run: |
-          gradle --no-daemon --stacktrace assembleDebug
+          ZIP_FILE=$(find "$GITHUB_WORKSPACE" \
+            -maxdepth 2 \
+            -type f \
+            -name "*.zip" \
+            | head -n 1)
 
-      - name: Verify APK output
-        run: |
-          echo "=== APK OUTPUT ==="
-          find "$GITHUB_WORKSPACE" -type f -name "*.apk" -print
-
-          if [ ! -f "$GITHUB_WORKSPACE/app/build/outputs/apk/debug/app-debug.apk" ]; then
-            echo "ERROR: app-debug.apk tidak ditemukan!"
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: File ZIP tidak ditemukan!"
             exit 1
           fi
 
-          echo "APK ditemukan:"
-          ls -lh "$GITHUB_WORKSPACE/app/build/outputs/apk/debug/app-debug.apk"
+          echo "ZIP ditemukan:"
+          echo "$ZIP_FILE"
 
-      - name: Prepare APK artifact
+          mkdir -p "$GITHUB_WORKSPACE/project"
+
+          unzip -o "$ZIP_FILE" \
+            -d "$GITHUB_WORKSPACE/project"
+
+          echo ""
+          echo "Isi hasil extract:"
+          find "$GITHUB_WORKSPACE/project" -maxdepth 3 -type f | head -100
+
+      - name: Find Gradle project
+        shell: bash
         run: |
-          mkdir -p artifact
+          SETTINGS_FILE=$(find "$GITHUB_WORKSPACE/project" \
+            -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            | head -n 1)
 
-          cp "$GITHUB_WORKSPACE/app/build/outputs/apk/debug/app-debug.apk" \
-             "$GITHUB_WORKSPACE/artifact/OfflineAI-debug.apk"
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: settings.gradle tidak ditemukan setelah extract!"
+            echo ""
+            echo "Struktur project:"
+            find "$GITHUB_WORKSPACE/project" -maxdepth 4 -type f | sort
+            exit 1
+          fi
 
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+
+          echo "Gradle project ditemukan:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Build APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Find APK
+        shell: bash
+        run: |
+          echo "Mencari APK..."
+
+          find "$PROJECT_DIR" \
+            -type f \
+            -name "*.apk" \
+            -print
+
+      - name: Prepare APK
+        shell: bash
+        run: |
+          APK_FILE=$(find "$PROJECT_DIR" \
+            -type f \
+            -path "*/build/outputs/apk/debug/*.apk" \
+            | head -n 1)
+
+          if [ -z "$APK_FILE" ]; then
+            echo "ERROR: APK tidak ditemukan!"
+            exit 1
+          fi
+
+          mkdir -p "$GITHUB_WORKSPACE/artifact"
+
+          cp "$APK_FILE" \
+            "$GITHUB_WORKSPACE/artifact/OfflineAI-debug.apk"
+
+          echo "APK siap:"
           ls -lh "$GITHUB_WORKSPACE/artifact/OfflineAI-debug.apk"
 
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: OfflineAI-APK
